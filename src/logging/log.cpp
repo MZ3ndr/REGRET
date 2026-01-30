@@ -1,7 +1,8 @@
 #include "log.h"
-#include <fstream>
+
 
 bool is_tty = isatty(STDOUT_FILENO);
+
 
 void Logger::log(LogLevel lvl, const std::string& s)
 {
