@@ -1,10 +1,9 @@
 #include "common/common.h"
 #include "logging/log.h"
 #include "main.h"
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
-REGRET::RG_Result REGRET::context::Vulkan::Debug(){
+REGRET::RG_Result REGRET::RG_Vulkan::Debug(){
     #ifdef DEBUG
     enableVkValidationLayers = true;
         if(CheckValidationLayerSupport()!=RG_Result::RG_SUCCESS){
@@ -15,7 +14,7 @@ REGRET::RG_Result REGRET::context::Vulkan::Debug(){
     return RG_Result::RG_SUCCESS;
 }
 
-REGRET::RG_Result REGRET::context::Vulkan::CreateInstance(){
+REGRET::RG_Result REGRET::RG_Vulkan::CreateInstance(){
 
     uint32_t glfwExtentionCount = 0;
     const char** glfwExtentions;
@@ -77,7 +76,7 @@ int rateDevice(VkPhysicalDevice device)
 }
 
 //aka findQueueFamilies
-QueueFamilyindices REGRET::context::Vulkan::QueueFamilySupport(VkPhysicalDevice candidate)
+QueueFamilyindices REGRET::RG_Vulkan::QueueFamilySupport(VkPhysicalDevice candidate)
 {
     QueueFamilyindices indices;
     uint32_t queueFamilyCount = 0;
@@ -104,13 +103,19 @@ QueueFamilyindices REGRET::context::Vulkan::QueueFamilySupport(VkPhysicalDevice 
     return indices;
 }
 
-bool REGRET::context::Vulkan::isDeviceSuitable(VkPhysicalDevice candidate)
+bool REGRET::RG_Vulkan::isDeviceSuitable(VkPhysicalDevice candidate)
 {
     QueueFamilyindices indices = QueueFamilySupport(candidate);
-    return indices.graphicsFamily.has_value();
+    bool extentionsSupported = checkDeviceExtentionSupport(candidate);
+    bool swapChainAdequate = false;
+    if(extentionsSupported){
+        SwapChainSupportDetails swapChainSupport = querySwapChainSupport(candidate);
+        swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+    }
+    return indices.isComplete() && extentionsSupported && swapChainAdequate;
 }
 
-REGRET::RG_Result REGRET::context::Vulkan::SelectPhysicalDevice()
+REGRET::RG_Result REGRET::RG_Vulkan::SelectPhysicalDevice()
 {
 
     u32 deviceCount = 0;
@@ -142,7 +147,7 @@ REGRET::RG_Result REGRET::context::Vulkan::SelectPhysicalDevice()
     return RG_Result::RG_SUCCESS;
 };
 
-REGRET::RG_Result REGRET::context::Vulkan::CreateLogicalDevice()
+REGRET::RG_Result REGRET::RG_Vulkan::CreateLogicalDevice()
 {
     float queuePriority = 1.0f; // priority of this queue relative to other queues
     QueueFamilyindices indices = QueueFamilySupport(physicalDevice);
@@ -164,7 +169,8 @@ REGRET::RG_Result REGRET::context::Vulkan::CreateLogicalDevice()
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pEnabledFeatures = &deviceFeatures;
-    createInfo.enabledExtensionCount = 0;
+    createInfo.enabledExtensionCount = deviceExtensions.size();
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
     if( enableVkValidationLayers ){
         createInfo.enabledLayerCount = static_cast<u32>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -183,10 +189,10 @@ REGRET::RG_Result REGRET::context::Vulkan::CreateLogicalDevice()
     return RG_Result::RG_SUCCESS;
 };
 
-REGRET::RG_Result REGRET::context::CreateSurface()
+REGRET::RG_Result REGRET::RG_Vulkan::CreateSurface(GLFWwindow* window)
 {
     VkResult result;
-    result = glfwCreateWindowSurface(vulkan.getInstance(), window,nullptr,&vulkan.getSurface());
+    result = glfwCreateWindowSurface(getInstance(), window,nullptr,&getSurface());
     if(result != VK_SUCCESS){
         ERROR("Failed to create Window Surface!");
         return RG_Result::RG_SURFACE_NOT_CREATED;
@@ -194,6 +200,121 @@ REGRET::RG_Result REGRET::context::CreateSurface()
     return RG_Result::RG_SUCCESS;
 }
 
-bool REGRET::context::Vulkan::checkDeviceExtentionSupport(){
-    return true;
+bool REGRET::RG_Vulkan::checkDeviceExtentionSupport(VkPhysicalDevice candidate){
+    u32 extensionCount;
+    vkEnumerateDeviceExtensionProperties(candidate,nullptr, &extensionCount,nullptr);
+    array<VkExtensionProperties> availableExtentions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(candidate,nullptr, &extensionCount,availableExtentions.data());
+    availableExtentions.resize(extensionCount);
+    std::set<std::string> requiredExtensions(deviceExtensions.begin(),deviceExtensions.end());
+    for(const auto& extension : availableExtentions){
+        requiredExtensions.erase(extension.extensionName);
+    }
+    return requiredExtensions.empty();
+}
+
+SwapChainSupportDetails REGRET::RG_Vulkan::querySwapChainSupport(VkPhysicalDevice candidate){
+    SwapChainSupportDetails details;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(candidate, surface, &details.capabilities);
+    u32 formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(candidate, surface, &formatCount, nullptr);
+    if(formatCount != 0){
+        details.formats.resize(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(candidate, surface, &formatCount, details.formats.data());
+    }
+
+    u32 presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(candidate, surface, &presentModeCount, nullptr);
+    if(presentModeCount != 0){
+        details.presentModes.resize(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(candidate, surface, &presentModeCount, details.presentModes.data());
+    }
+
+    return details;
+}
+
+VkSurfaceFormatKHR REGRET::RG_Vulkan::chooseSwapSurfaceFormat(const array<VkSurfaceFormatKHR>& availableFormats){
+    for(const auto& availableFormat : availableFormats){
+        if( availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR ){
+            return availableFormat;
+        }
+    }
+    return availableFormats[0];
+};
+
+VkPresentModeKHR REGRET::RG_Vulkan::chooseSwapPresentMode(const array<VkPresentModeKHR>& availablePresentModes){
+    for(const auto& availablePresentMode : availablePresentModes){
+        if(availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR){
+            return availablePresentMode;
+        }
+    }
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D REGRET::RG_Vulkan::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities,GLFWwindow* window){
+    if(capabilities.currentExtent.width != std::numeric_limits<u32>::max()){
+        return capabilities.currentExtent;
+    }
+    else{
+        int width,height;
+        glfwGetFramebufferSize(window,&width, &height);
+        VkExtent2D actualExtent = {
+            static_cast<u32>(width),
+            static_cast<u32>(height)
+        };
+        actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        return actualExtent;
+    }
+}
+
+REGRET::RG_Result REGRET::RG_Vulkan::CreateSwapChain(GLFWwindow* window){
+    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+
+    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities,window);
+    u32 imageCount = swapChainSupport.capabilities.minImageCount+1;
+    if(swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount){
+        imageCount = swapChainSupport.capabilities.maxImageCount;
+    };
+
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = surface;
+    createInfo.minImageCount = imageCount;
+    createInfo.imageFormat = surfaceFormat.format;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    createInfo.imageExtent = extent;
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    QueueFamilyindices indices = QueueFamilySupport(physicalDevice);
+    u32 QueueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+
+    if(indices.graphicsFamily != indices.presentFamily){
+        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        createInfo.queueFamilyIndexCount = 2;
+        createInfo.pQueueFamilyIndices = QueueFamilyIndices;
+    }else{
+        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.queueFamilyIndexCount = 0;
+        createInfo.pQueueFamilyIndices = nullptr;
+    }
+    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = presentMode;
+    createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    VkResult result = vkCreateSwapchainKHR(device,&createInfo,nullptr,&swapChain);
+    if(result != VK_SUCCESS){
+        ERROR("Couldnt create Swapchain!");
+        return RG_Result::RG_SWAPCHAIN_CREATE_ERR;
+    };
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+    swapChainImages.resize(imageCount);
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+
+    return RG_Result::RG_SUCCESS;
 }

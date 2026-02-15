@@ -38,7 +38,7 @@ void test2(){
     }
 }
 
-REGRET::RG_Result REGRET::context::Vulkan::CheckValidationLayerSupport(){
+REGRET::RG_Result REGRET::RG_Vulkan::CheckValidationLayerSupport(){
     u32 layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
@@ -62,15 +62,15 @@ REGRET::RG_Result REGRET::context::Vulkan::CheckValidationLayerSupport(){
     return RG_Result::RG_SUCCESS;
 }
 
-REGRET::RG_Result REGRET::context::VulkanInit(){
+REGRET::RG_Result REGRET::RG_Vulkan::VulkanInit(GLFWwindow* window){
 
-    res = vulkan.CreateInstance();
+    res = CreateInstance();
     RG_check(res);
-    res = CreateSurface();
+    res = CreateSurface(window);
     RG_check(res);
-    res = vulkan.SelectPhysicalDevice();
+    res = SelectPhysicalDevice();
     RG_check(res);
-    res = vulkan.CreateLogicalDevice();
+    res = CreateLogicalDevice();
     RG_check(res);
     return RG_Result::RG_SUCCESS;
 };
@@ -105,7 +105,7 @@ REGRET::RG_Result REGRET::context::init(){
     WARN("Window DONE");
     RG_check(res);
     WARN("Initiating Vulkan...");
-    res = VulkanInit();
+    res = vulkan.VulkanInit(window);
     WARN("Vulkan DONE");
     RG_check(res);
     WARN("SETUP DONE");
