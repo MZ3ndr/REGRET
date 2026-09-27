@@ -1,15 +1,10 @@
 //created 19.1.2026 21:00
+//first rendering (RGB Triangle) 27.9.2026 5:00
 #include "main.h"
 #include "common/common.h"
-#include "logging/log.h"
-#include <GLFW/glfw3native.h>
-#include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan_wayland.h>
 
 // test [[someAnchor|test]]
 // test 2 [[#someAnchor|test2]]
-
-
 
 
 void test(){
@@ -72,6 +67,22 @@ REGRET::RG_Result REGRET::RG_Vulkan::VulkanInit(GLFWwindow* window){
     RG_check(res);
     res = CreateLogicalDevice();
     RG_check(res);
+    res = CreateSwapChain(window);
+    RG_check(res);
+    res = CreateImageViews();
+    RG_check(res);
+    res = CreateRenderPass();
+    RG_check(res);
+    res = CreateGraphicsPipeine();
+    RG_check(res);
+    res = CreateFramebuffer();
+    RG_check(res);
+    res = CreateCommandPool();
+    RG_check(res);
+    res = CreateCommandBuffer();
+    RG_check(res);
+    res = CreateSyncObjects();
+    RG_check(res);
     return RG_Result::RG_SUCCESS;
 };
 
@@ -94,6 +105,7 @@ REGRET::RG_Result REGRET::context::WindowInit(){
         createInfo.display = glfwGetWaylandDisplay();
         createInfo.surface = glfwGetWaylandWindow(window);
     #endif
+    glfwFocusWindow(window);
     return RG_Result::RG_SUCCESS;
 };
 
@@ -112,10 +124,52 @@ REGRET::RG_Result REGRET::context::init(){
     return RG_Result::RG_SUCCESS;
 }
 
+void REGRET::context::drawFrame(){
+    vkWaitForFences(vulkan._device, 1, &vulkan._inFlightFence,VK_TRUE, UINT64_MAX);
+    vkResetFences(vulkan._device,1,&vulkan._inFlightFence);
+    u32 imageIndex;
+    vkAcquireNextImageKHR(vulkan._device, vulkan._swapChain, UINT64_MAX, vulkan._imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    vkResetCommandBuffer(vulkan._commandBuffer,0);
+    vulkan.recordCommandBuffer(vulkan._commandBuffer, imageIndex);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    VkSemaphore waitSemaphores[] = {vulkan._imageAvailableSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &vulkan._commandBuffer;
+
+    VkSemaphore signalSemaphores[] = {vulkan._renderFinishedSemaphore};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    if(vkQueueSubmit(vulkan._graphicsQueue,1,&submitInfo,vulkan._inFlightFence) != VK_SUCCESS){
+        RG_ERR_BREAK("fialed to submir draw command buffer!")
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapChains[] = {vulkan._swapChain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &imageIndex;
+
+    presentInfo.pResults = nullptr;
+
+    vkQueuePresentKHR(vulkan._presentQueue,&presentInfo);
+}
+
 REGRET::RG_Result  UpdateLoop(REGRET::context *ctx){
     while(!glfwWindowShouldClose(ctx->window)){
         glfwPollEvents();
-
+        ctx->drawFrame();
 
     }
     return REGRET::RG_Result::RG_SUCCESS;
@@ -137,3 +191,4 @@ int main() {
         ERROR(res);
     }
 };
+

@@ -1,7 +1,5 @@
+#include "RG_vulkan.h"
 #include "common/common.h"
-#include "logging/log.h"
-#include "main.h"
-#include <vulkan/vulkan_core.h>
 
 REGRET::RG_Result REGRET::RG_Vulkan::Debug(){
     #ifdef DEBUG
@@ -192,7 +190,7 @@ REGRET::RG_Result REGRET::RG_Vulkan::CreateLogicalDevice()
 REGRET::RG_Result REGRET::RG_Vulkan::CreateSurface(GLFWwindow* window)
 {
     VkResult result;
-    result = glfwCreateWindowSurface(getInstance(), window,nullptr,&getSurface());
+    result = glfwCreateWindowSurface(instance, window, nullptr, &surface);
     if(result != VK_SUCCESS){
         ERROR("Failed to create Window Surface!");
         return RG_Result::RG_SURFACE_NOT_CREATED;
@@ -233,27 +231,28 @@ SwapChainSupportDetails REGRET::RG_Vulkan::querySwapChainSupport(VkPhysicalDevic
     return details;
 }
 
-VkSurfaceFormatKHR REGRET::RG_Vulkan::chooseSwapSurfaceFormat(const array<VkSurfaceFormatKHR>& availableFormats){
+void SwapChainChoose::chooseSwapSurfaceFormat(const array<VkSurfaceFormatKHR>& availableFormats){
     for(const auto& availableFormat : availableFormats){
         if( availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR ){
-            return availableFormat;
+            surfaceFormat = availableFormat;
+            return;
         }
     }
-    return availableFormats[0];
+    surfaceFormat = availableFormats[0];
 };
 
-VkPresentModeKHR REGRET::RG_Vulkan::chooseSwapPresentMode(const array<VkPresentModeKHR>& availablePresentModes){
+void SwapChainChoose::chooseSwapPresentMode(const array<VkPresentModeKHR>& availablePresentModes){
     for(const auto& availablePresentMode : availablePresentModes){
         if(availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR){
-            return availablePresentMode;
+            this->presentMode = availablePresentMode;
         }
     }
-    return VK_PRESENT_MODE_FIFO_KHR;
+    this->presentMode = VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D REGRET::RG_Vulkan::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities,GLFWwindow* window){
+void SwapChainChoose::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities,GLFWwindow* window){
     if(capabilities.currentExtent.width != std::numeric_limits<u32>::max()){
-        return capabilities.currentExtent;
+        this->extent = capabilities.currentExtent;
     }
     else{
         int width,height;
@@ -264,46 +263,47 @@ VkExtent2D REGRET::RG_Vulkan::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
         };
         actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-        return actualExtent;
+        this->extent = actualExtent;
     }
 }
 
+
 REGRET::RG_Result REGRET::RG_Vulkan::CreateSwapChain(GLFWwindow* window){
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
-
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities,window);
+    SwapChainChoose swapChainInfo(window,swapChainSupport);
     u32 imageCount = swapChainSupport.capabilities.minImageCount+1;
     if(swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount){
         imageCount = swapChainSupport.capabilities.maxImageCount;
     };
 
+    swapChainImageFormat = swapChainInfo.surfaceFormat.format;
+    swapChainExtent      = swapChainInfo.extent;
+
     VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = surface;
-    createInfo.minImageCount = imageCount;
-    createInfo.imageFormat = surfaceFormat.format;
-    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
+    createInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface          = surface;
+    createInfo.minImageCount    = imageCount;
+    createInfo.imageFormat      = swapChainInfo.surfaceFormat.format;
+    createInfo.imageColorSpace  = swapChainInfo.surfaceFormat.colorSpace;
+    createInfo.imageExtent      = swapChainInfo.extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     QueueFamilyindices indices = QueueFamilySupport(physicalDevice);
     u32 QueueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
     if(indices.graphicsFamily != indices.presentFamily){
-        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = 2;
-        createInfo.pQueueFamilyIndices = QueueFamilyIndices;
+        createInfo.imageSharingMode         = VK_SHARING_MODE_CONCURRENT;
+        createInfo.queueFamilyIndexCount    = 2;
+        createInfo.pQueueFamilyIndices      = QueueFamilyIndices;
     }else{
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        createInfo.queueFamilyIndexCount = 0;
-        createInfo.pQueueFamilyIndices = nullptr;
+        createInfo.imageSharingMode         = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.queueFamilyIndexCount    = 0;
+        createInfo.pQueueFamilyIndices      = nullptr;
     }
     createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = presentMode;
+    createInfo.presentMode = swapChainInfo.presentMode;
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
@@ -318,3 +318,152 @@ REGRET::RG_Result REGRET::RG_Vulkan::CreateSwapChain(GLFWwindow* window){
 
     return RG_Result::RG_SUCCESS;
 }
+
+REGRET::RG_Result REGRET::RG_Vulkan::CreateImageViews(){
+    swapChainImageViews.resize(swapChainImages.size());
+    for(size_t i = 0; i < swapChainImages.size(); i++){
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = swapChainImages[i];
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = swapChainImageFormat;
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_R;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_G;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_B;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_A;
+
+        createInfo.subresourceRange.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel    = 0;
+        createInfo.subresourceRange.levelCount      = 1;
+        createInfo.subresourceRange.baseArrayLayer  = 0;
+        createInfo.subresourceRange.layerCount      = 1;
+
+        if(vkCreateImageView(device,&createInfo,nullptr,&swapChainImageViews[i]) != VK_SUCCESS){
+            ERROR("Failed to create image views!");
+            return RG_Result::RG_SWAPCHAIN_IMAGE_VIEW_CREATE_ERR;
+        }
+    }
+    return RG_Result::RG_SUCCESS;
+};
+
+REGRET::RG_Result REGRET::RG_Vulkan::CreateFramebuffer(){
+    swapChainFramebuffers.resize(swapChainImageViews.size());
+    for(size_t i = 0; i < swapChainImageViews.size(); i++ ){
+        VkImageView attachments[] = {
+            swapChainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = swapChainExtent.width;
+        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.layers = 1;
+
+        if(vkCreateFramebuffer(device,&framebufferInfo,nullptr,&swapChainFramebuffers[i]) != VK_SUCCESS ){
+            RG_ERR_BREAK("failed to create Framebuffer!");
+        }
+    }
+
+
+    return RG_Result::RG_SUCCESS;
+}
+
+REGRET::RG_Result REGRET::RG_Vulkan::CreateCommandPool(){
+    QueueFamilyindices queueFamilyIndices = QueueFamilySupport(physicalDevice);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+    if(vkCreateCommandPool(device,&poolInfo,nullptr,&commandPool) != VK_SUCCESS){
+        RG_ERR_BREAK("failed to create Command Pool!");
+    }
+
+    return RG_Result::RG_SUCCESS;
+}
+
+REGRET::RG_Result REGRET::RG_Vulkan::CreateCommandBuffer(){
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    if(vkAllocateCommandBuffers(device,&allocInfo,&commandBuffer) != VK_SUCCESS){
+        RG_ERR_BREAK("failed to create command buffers!")
+    }
+
+    return RG_Result::RG_SUCCESS;
+}
+
+REGRET::RG_Result REGRET::RG_Vulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex){
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0;
+
+    if(vkBeginCommandBuffer(commandBuffer,&beginInfo) != VK_SUCCESS){
+        RG_ERR_BREAK("failed to begin recording command buffer!")
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = renderPass;
+    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = {0,0};
+    renderPassInfo.renderArea.extent = swapChainExtent;
+
+    VkClearValue clearColor = {{{0.0f,0.0f,0.0f,1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS,graphicsPipeline);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapChainExtent.width);
+    viewport.height = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer,0,1,&viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0,0};
+    scissor.extent = swapChainExtent;
+    vkCmdSetScissor(commandBuffer,0,1,&scissor);
+
+    vkCmdDraw(commandBuffer,3,1,0,0);
+
+    vkCmdEndRenderPass(commandBuffer);
+    if(vkEndCommandBuffer(commandBuffer) != VK_SUCCESS){
+        RG_ERR_BREAK("failed to record command buffer!")
+    }
+
+    return RG_Result::RG_SUCCESS;
+}
+
+
+
+//TODO: clean up for that shit
+REGRET::RG_Result REGRET::RG_Vulkan::CreateSyncObjects(){
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    if(
+        vkCreateSemaphore(device,&semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(device,&semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
+        vkCreateFence(device,&fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS
+    ){
+        RG_ERR_BREAK("failed to create semaphores!");
+    }
+    return RG_Result::RG_SUCCESS;
+};

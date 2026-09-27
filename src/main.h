@@ -1,13 +1,11 @@
 #pragma  once
-#include "./common/common.h"
-#include "./logging/log.h"
 #include "RG_vulkan.h"
 
 // Rendering
-// Engine for
-// Gloriously
-// Raw
-// Experiments in
+// Engine
+// Generating
+// Rough
+// Experiments with
 // Technology
 
 #define RG_check(res) if(res != RG_Result::RG_SUCCESS){return res;};
@@ -30,11 +28,11 @@ namespace REGRET {
             }winSettings;
             RG_Vulkan vulkan;
             RG_Result WindowInit();
-
         public:
             GLFWwindow* window;
             RG_Result CleanUp();
             RG_Result init();
+            void drawFrame();
 
     };
 

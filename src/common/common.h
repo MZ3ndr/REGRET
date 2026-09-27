@@ -46,7 +46,10 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-//7 von 32
+#define RG_ERR_BREAK(reason) ERROR(reason); throw std::runtime_error("cant continue safely!");
+
+
+//13 von 32
 
 namespace REGRET {
     enum class RG_Result {
@@ -59,6 +62,7 @@ namespace REGRET {
         RG_LOGICAL_DEVICE_ERR,
         RG_SURFACE_NOT_CREATED,
         RG_SWAPCHAIN_CREATE_ERR,
+        RG_SWAPCHAIN_IMAGE_VIEW_CREATE_ERR,
     };
 }
 

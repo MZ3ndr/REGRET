@@ -1,5 +1,13 @@
 CXX := clang++
 LD  := clang++
+SHADER_COMPILER := glslc
+
+SHADER_CODE_DIR := src/shaders
+SHADER_DIR := bin/shaders
+VERT_SHADERS := $(wildcard $(SHADER_CODE_DIR)/*.vert)
+FRAG_SHADERS := $(wildcard $(SHADER_CODE_DIR)/*.frag)
+
+
 SRC_DIR := src
 INCLUDE_DIR := include
 BUILD_DIR := build
@@ -9,6 +17,7 @@ APP_NAME := debug
 PKG_CONFIG ?= pkg-config
 GLFW_LIBS := $(shell $(PKG_CONFIG) --libs glfw3 2>/dev/null)
 GLFW_CFLAGS := $(shell $(PKG_CONFIG) --cflags glfw3 2>/dev/null)
+
 
 
 CPPFLAGS := -I$(INCLUDE_DIR)
@@ -40,10 +49,11 @@ OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPS := $(OBJECTS:.o=.d)
 
 all: $(WRAPPER)
-debug: all
+debug: all shaders
 $(REAL_BINARY): $(OBJECTS)
 	@mkdir -p "$(BIN_DIR)"
 	@mkdir -p "$(log_DIR)"
+	@mkdir -p "$(SHADER_DIR)"
 	$(LD) $(OBJECTS) -o $@ $(LDFLAGS) $(LIBS) $(LDFLAGS_DEBUG)
 
 ifeq ($(TARGET_OS),linux)
@@ -77,7 +87,21 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 -include $(DEPS)
 
+shaders:
+	@mkdir -p "$(SHADER_DIR)"
+	@for shader in $(VERT_SHADERS); do \
+		out="$(SHADER_DIR)/$$(basename $$shader .vert).spv"; \
+		echo "Compiling $$shader -> $$out"; \
+		$(SHADER_COMPILER) $$shader -o $$out; \
+	done
+
+	@for shader in $(FRAG_SHADERS); do \
+		out="$(SHADER_DIR)/$$(basename $$shader .frag).spv"; \
+		echo "Compiling $$shader -> $$out"; \
+		$(SHADER_COMPILER) $$shader -o $$out; \
+	done
+
 clean:
 	@rm -rf "$(BUILD_DIR)" "$(BIN_DIR)"
 
-.PHONY: all debug clean
+.PHONY: all debug clean shaders
